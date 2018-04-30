@@ -35,7 +35,7 @@ function createWindow() {
     // width: 1050
   });
 
-  tray = new Tray(__dirname + '/../../static/favicon.ico');
+  tray = new Tray(__static + '/favicon.ico');
   const contextMenu = Menu.buildFromTemplate([
     {
       label: '打开主界面', type: 'normal', click: () => {
