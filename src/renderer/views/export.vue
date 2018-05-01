@@ -6,15 +6,10 @@
       <div class="col">
         <h3 class="text-center">日期导出</h3>
         <p>导出文件夹：{{savePath}}
-          <button class="btn btn-sm btn-primary" type="button" @click="changePath">切换</button>
+          <a href="#" @click="changePath">切换</a>
         </p>
         <div class="form">
           <div class="form-group">
-            <label for="">选择日期</label>
-            <input type="date" class="form-control" v-model="form.date">
-          </div>
-          <div class="form-group">
-            <button @click="exportDate" type="button" class="btn btn-primary btn-block">日期导出</button>
             <button @click="exportAll" type="button" class="btn btn-danger btn-block">全部导出</button>
           </div>
         </div>
@@ -39,71 +34,58 @@
     },
     data() {
       return {
-        exlHeader: ['游戏名称', '金额', '客户昵称', '客服名字', '转账方式', '备注', '最后时间', '日期'],
+        exlHeader: ['游戏名称', '金额', '客户昵称', '客服名字', '转账方式', '最后时间', '备注'],
         isSaving: false,
         search: {
+          startDate: '',
+          endDate: '',
           date: moment().format('YYYY-MM-DD')
         },
         form: {
           date: moment().format('YYYY-MM-DD')
         },
+        games: [],
         savePath: null,
-        saveName: '导出表单-' + moment().format('YYYY-MM-DD') + '.xlsx',
+        saveName: '全部导出-' + moment().format('YYYY-MM-DD_HHmmss') + '.xlsx',
       }
     },
     methods: {
       changePath() {
         ipcRenderer.send('choose');
       },
-      //按照日期导出
-      exportDate() {
-        if (this.checkFilePath() === false) {
-          return false;
-        }
-        this.$db.records.find(this.form)
-          .sort({createDateTime: -1})
-          .exec((err, docs) => {
-            if (!err) {
-              this.doExport(docs, this.saveName);
-            }
-          });
-      },
-      //执行导出
-      doExport(docs, filename) {
-        const data = [this.exlHeader];
-        docs.forEach((it) => {
-          data.push([it.game, it.money, it.customer, it.imName, it.transferType, it.note, it.createDateTime, it.date]);
-        });
-        const options = [];
-        const buffer = Xlsx.build([{
-          name: `${this.form.date}报表`,
-          data: data
-        }], options); // Returns a buffer
-        fs.writeFileSync(this.savePath + '/' + filename, buffer);
-        this.$toasted.success("导出成功,到文件：" + this.savePath).goAway(2000)
-      },
-      exportAll() {
-        if (this.checkFilePath() === false) {
-          return false;
-        }
-        if (true !== confirm('全部导出如果数据很多会花费大量时间，请耐心等待')) {
-          return false;
-        }
-        this.$db.records.find({})
-          .sort({createDateTime: -1})
-          .exec((err, docs) => {
-            const data = [this.exlHeader];
-            docs.forEach((it) => {
-              data.push([it.game, it.money, it.customer, it.imName, it.transferType, it.note, it.createDateTime, it.date]);
+      async findRecords(gameName) {
+        const _self = this;
+        return new Promise((resolve, reject) => {
+          _self.$db.records.find({game: gameName})
+            .sort({createDateTime: -1})
+            .exec((err, docs) => {
+              const data = [_self.exlHeader];
+              docs.forEach((it) => {
+                data.push([it.game, it.money, it.customer, it.imName, it.transferType, it.createDateTime, it.note]);
+              });
+              resolve({name: gameName, data: data});
             });
-            const options = [];
-            const buffer = Xlsx.build([{
-              name: `全部导出报表`,
-              data: data
-            }], options); // Returns a buffer
-            fs.writeFileSync(this.savePath + '/全部导出.xlsx', buffer);
-            this.$toasted.success("导出成功,到文件：" + this.savePath).goAway(2000)
-          });
+        });
+      },
+      async exportAll() {
+        if (this.checkFilePath() === false) {
+          return false;
+        }
+        if (true !== confirm('导出后会删除之前的所有数据，请耐心等待。确认导出吗？')) {
+          return false;
+        }
+        const buildData = [];
+        const execMethods = [];
+        for (let i = 0; i < this.games.length; i++) {
+          let game = this.games[i];
+          let d = await this.findRecords(game.name);
+          buildData.push(d);
+        }
+        const buffer = Xlsx.build(buildData, []); // Returns a buffer
+        let dateTime = moment().format('YYYY-MM-DD_HHmmss') + '.xlsx';
+        fs.writeFileSync(this.savePath + `/全部导出_${dateTime}`, buffer);
+        this.$toasted.success("导出成功,到文件：" + this.savePath).goAway(2000)
+        //this.$db.records.remove({}, {multi: true});
       },
       checkFilePath() {
         if (this.savePath === null) {
@@ -112,7 +94,13 @@
         } else {
           return true;
         }
-      }
+      },
+    },
+    mounted() {
+      //初始化获取游戏
+      this.$db.settings.find({type: 'type.game'}).sort({sort: 1}).exec((err, docs) => {
+        this.games = [...docs]
+      });
     },
     created() {
       this.checkFilePath();
